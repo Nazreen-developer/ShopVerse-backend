@@ -35,6 +35,7 @@ app.use(
   })
 );
 
+// ROUTES
 app.use("/api/products", productRoute);
 app.use("/api/users", userRoute);
 app.use("/api/carts", cartRoute);
@@ -46,6 +47,7 @@ app.use("/api/admin/products", productAdminRoute);
 app.use("/uploads", express.static("uploads"));
 app.use("/api/admin/orders", adminOrderRoute);
 
+// SEED ROUTE
 app.get("/api/seed", async (req, res) => {
   try {
     await Product.deleteMany();
@@ -56,11 +58,14 @@ app.get("/api/seed", async (req, res) => {
   }
 });
 
+// CONNECT DATABASE AND START SERVER
 mongoose.connect('mongodb+srv://nazreenb2512_db_user:vHcCE1S90zsn2CZ7@cluster1.5vhxha0.mongodb.net/demo')
   .then(() => {
     console.log('Database Connected Successfully!');
-    app.listen(3500, () => {
-      console.log('Server is running on port 3500');
+    // ✅ FIX: Use dynamic port for Render deployment
+    const PORT = process.env.PORT || 3500;
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
     });
   })
   .catch((err) => console.log(err));
