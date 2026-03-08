@@ -30,7 +30,10 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use(
   cors({
-    origin: 'http://localhost:5173', // removed trailing slash
+    origin: [
+      "http://localhost:5173",
+      "https://shop-verse-eight.vercel.app"
+    ],
     credentials: true,
   })
 );
