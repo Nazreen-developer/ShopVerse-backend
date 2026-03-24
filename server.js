@@ -18,11 +18,16 @@ import Product from "./models/Product.js";
 import products from "./data/products.js";
 import dns from "node:dns/promises";
 import path from "path";
+import { fileURLToPath } from "url"; // ✅ ADDED
 
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 const app = express();
 dotenv.config();
+
+/* ✅ FIX FOR __dirname (ES MODULE) */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 app.use(express.json());
 app.use(cookieParser());
@@ -47,7 +52,10 @@ app.use("/api/orders", orderRoute);
 app.use("/api/upload", uploadRoute);
 app.use("/api/admin/users", adminRoute);
 app.use("/api/admin/products", productAdminRoute);
-app.use("/uploads", express.static("uploads"));
+
+/* ✅ FIXED STATIC PATH (VERY IMPORTANT) */
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 app.use("/api/admin/orders", adminOrderRoute);
 
 // SEED ROUTE
@@ -65,7 +73,7 @@ app.get("/api/seed", async (req, res) => {
 mongoose.connect('mongodb+srv://nazreenb2512_db_user:vHcCE1S90zsn2CZ7@cluster1.5vhxha0.mongodb.net/demo')
   .then(() => {
     console.log('Database Connected Successfully!');
-    // ✅ FIX: Use dynamic port for Render deployment
+    
     const PORT = process.env.PORT || 3500;
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
