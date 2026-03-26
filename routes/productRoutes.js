@@ -3,68 +3,61 @@ import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import { protect, admin } from "../middleware/authMiddleware.js";
 import multer from "multer";
-import path from "path";
+import { v2 as cloudinary } from "cloudinary";
+import streamifier from "streamifier";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const router = express.Router();
 
 /* ==============================
-   MULTER CONFIG
+   CLOUDINARY CONFIG
 ============================== */
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename(req, file, cb) {
-    cb(
-      null,
-      `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`
-    );
-  },
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+/* ==============================
+   MULTER MEMORY STORAGE
+============================== */
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 /* ==============================
-   GET ALL PRODUCTS (WITH FILTER)
+   HELPER: UPLOAD TO CLOUDINARY
+============================== */
+const uploadToCloudinary = (buffer) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: "products" },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    );
+    streamifier.createReadStream(buffer).pipe(stream);
+  });
+};
+
+/* ==============================
+   GET ALL PRODUCTS
 ============================== */
 router.get("/", async (req, res) => {
   try {
     const { mainCategory, subCategory } = req.query;
 
     let filter = {};
-
-    if (mainCategory) {
-      filter.mainCategory = mainCategory;
-    }
-
-    if (subCategory) {
-      filter.subCategory = subCategory;
-    }
+    if (mainCategory) filter.mainCategory = mainCategory;
+    if (subCategory) filter.subCategory = subCategory;
 
     const products = await Product.find(filter);
-
     res.json(products);
+
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: "Server Error" });
-  }
-});
-
-/* ==============================
-   SEARCH PRODUCTS
-============================== */
-router.get("/search", async (req, res) => {
-  try {
-    const q = req.query.q;
-
-    const products = await Product.find({
-      name: { $regex: q, $options: "i" },
-    });
-
-    res.json(products);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Search failed" });
   }
 });
 
@@ -73,21 +66,19 @@ router.get("/search", async (req, res) => {
 ============================== */
 router.get("/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid product ID" });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Invalid ID" });
     }
 
-    const product = await Product.findById(id);
+    const product = await Product.findById(req.params.id);
 
     if (!product) {
-      return res.status(404).json({ message: "Product not found" });
+      return res.status(404).json({ message: "Not found" });
     }
 
     res.json(product);
+
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: "Server Error" });
   }
 });
@@ -102,53 +93,32 @@ router.post(
   upload.single("image"),
   async (req, res) => {
     try {
-      const {
-        name,
-        description,
-        price,
-        discountPrice,
-        countInStock,
-        sku,
-        mainCategory,
-        subCategory,
-        brand,
-        sizes,
-        colors,
-        collections,
-        material,
-        gender,
-      } = req.body;
+      let imageUrl = "";
+
+      if (req.file) {
+        const result = await uploadToCloudinary(req.file.buffer);
+        imageUrl = result.secure_url;
+      }
 
       const product = new Product({
-        name,
-        description,
-        price: Number(price),
-        discountPrice: Number(discountPrice),
-        countInStock: Number(countInStock),
-        sku,
-        mainCategory,
-        subCategory,
-        brand,
-        sizes: sizes ? sizes.split(",") : [],
-        colors: colors ? colors.split(",") : [],
-        collections,
-        material,
-        gender,
-        images: [
-          {
-            url: req.file ? `/uploads/${req.file.filename}` : "",
-            altText: name,
-          },
-        ],
+        ...req.body,
+        price: Number(req.body.price),
+        discountPrice: Number(req.body.discountPrice),
+        countInStock: Number(req.body.countInStock),
+        sizes: req.body.sizes ? req.body.sizes.split(",") : [],
+        colors: req.body.colors ? req.body.colors.split(",") : [],
+        images: imageUrl
+          ? [{ url: imageUrl, altText: req.body.name }]
+          : [],
         user: req.user._id,
       });
 
-      const createdProduct = await product.save();
+      const created = await product.save();
+      res.status(201).json(created);
 
-      res.status(201).json(createdProduct);
     } catch (error) {
       console.error(error);
-      res.status(500).json({ message: "Product creation failed" });
+      res.status(500).json({ message: "Create failed" });
     }
   }
 );
@@ -163,65 +133,37 @@ router.put(
   upload.single("image"),
   async (req, res) => {
     try {
-      const { id } = req.params;
-
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({ message: "Invalid product ID" });
-      }
-
-      const product = await Product.findById(id);
+      const product = await Product.findById(req.params.id);
 
       if (!product) {
-        return res.status(404).json({ message: "Product not found" });
+        return res.status(404).json({ message: "Not found" });
       }
 
-      const {
-        name,
-        description,
-        price,
-        discountPrice,
-        countInStock,
-        sku,
-        mainCategory,
-        subCategory,
-        brand,
-        sizes,
-        colors,
-        collections,
-        material,
-        gender,
-      } = req.body;
+      Object.assign(product, {
+        ...req.body,
+        price: Number(req.body.price),
+        discountPrice: Number(req.body.discountPrice),
+        countInStock: Number(req.body.countInStock),
+      });
 
-      product.name = name || product.name;
-      product.description = description || product.description;
-      product.price = price || product.price;
-      product.discountPrice = discountPrice || product.discountPrice;
-      product.countInStock = countInStock || product.countInStock;
-      product.sku = sku || product.sku;
-      product.mainCategory = mainCategory || product.mainCategory;
-      product.subCategory = subCategory || product.subCategory;
-      product.brand = brand || product.brand;
-      product.collections = collections || product.collections;
-      product.material = material || product.material;
-      product.gender = gender || product.gender;
-
-      if (sizes) product.sizes = sizes.split(",");
-      if (colors) product.colors = colors.split(",");
+      if (req.body.sizes) product.sizes = req.body.sizes.split(",");
+      if (req.body.colors) product.colors = req.body.colors.split(",");
 
       if (req.file) {
+        const result = await uploadToCloudinary(req.file.buffer);
+
         product.images = [
           {
-            url: `/uploads/${req.file.filename}`,
+            url: result.secure_url,
             altText: product.name,
           },
         ];
       }
 
-      const updatedProduct = await product.save();
+      const updated = await product.save();
+      res.json(updated);
 
-      res.json(updatedProduct);
     } catch (error) {
-      console.error(error);
       res.status(500).json({ message: "Update failed" });
     }
   }
@@ -232,23 +174,16 @@ router.put(
 ============================== */
 router.delete("/:id", protect, admin, async (req, res) => {
   try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid product ID" });
-    }
-
-    const product = await Product.findById(id);
+    const product = await Product.findById(req.params.id);
 
     if (!product) {
-      return res.status(404).json({ message: "Product not found" });
+      return res.status(404).json({ message: "Not found" });
     }
 
     await product.deleteOne();
+    res.json({ message: "Deleted" });
 
-    res.json({ message: "Product removed" });
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: "Delete failed" });
   }
 });
