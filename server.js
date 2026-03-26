@@ -3,8 +3,6 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
-import path from "path";
-import { fileURLToPath } from "url";
 
 import productRoute from "./routes/productRoutes.js";
 import userRoute from "./routes/userRoutes.js";
@@ -13,18 +11,12 @@ import orderRoute from "./routes/orderRoutes.js";
 import checkoutRoute from "./routes/checkoutRoutes.js";
 import uploadRoute from "./routes/uploadRoutes.js";
 import adminRoute from "./routes/adminRoutes.js";
-import productAdminRoute from "./routes/productAdminRoutes.js"; // ✅ FIXED
+import productAdminRoute from "./routes/productAdminRoutes.js";
 import adminOrderRoute from "./routes/adminOrderRoutes.js";
 
 dotenv.config();
 
 const app = express();
-
-/* ==============================
-   FIX __dirname (ES MODULE)
-============================== */
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 /* ==============================
    MIDDLEWARE
@@ -42,11 +34,6 @@ app.use(
     credentials: true,
   })
 );
-
-/* ==============================
-   STATIC FILES (IMPORTANT 🔥)
-============================== */
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 /* ==============================
    ROUTES
@@ -73,7 +60,7 @@ app.get("/", (req, res) => {
    DATABASE CONNECTION
 ============================== */
 mongoose
-  .connect(process.env.MONGO_URI) // ✅ USE ENV
+  .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("Database Connected Successfully!");
 
@@ -83,4 +70,6 @@ mongoose
       console.log(`Server running on port ${PORT}`);
     });
   })
-  .catch((err) => console.log(err));
+  .catch((err) => {
+    console.error("DB Error:", err);
+  });
