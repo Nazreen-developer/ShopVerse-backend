@@ -1,8 +1,10 @@
-import express from 'express';
-import mongoose from 'mongoose';
-import cors from 'cors';
-import dotenv from 'dotenv';
+import express from "express";
+import mongoose from "mongoose";
+import cors from "cors";
+import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
+import path from "path";
+import { fileURLToPath } from "url";
 
 import productRoute from "./routes/productRoutes.js";
 import userRoute from "./routes/userRoutes.js";
@@ -11,72 +13,74 @@ import orderRoute from "./routes/orderRoutes.js";
 import checkoutRoute from "./routes/checkoutRoutes.js";
 import uploadRoute from "./routes/uploadRoutes.js";
 import adminRoute from "./routes/adminRoutes.js";
-import productAdminRoute from "./routes/prodcutAdminRoutes.js";
+import productAdminRoute from "./routes/productAdminRoutes.js"; // ✅ FIXED
 import adminOrderRoute from "./routes/adminOrderRoutes.js";
 
-import Product from "./models/Product.js";
-import products from "./data/products.js";
-import dns from "node:dns/promises";
-import path from "path";
-import { fileURLToPath } from "url"; // ✅ ADDED
-
-dns.setServers(["1.1.1.1", "8.8.8.8"]);
-
-const app = express();
 dotenv.config();
 
-/* ✅ FIX FOR __dirname (ES MODULE) */
+const app = express();
+
+/* ==============================
+   FIX __dirname (ES MODULE)
+============================== */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/* ==============================
+   MIDDLEWARE
+============================== */
 app.use(express.json());
-app.use(cookieParser());
 app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
 
 app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://shop-verse-eight.vercel.app"
+      "https://shop-verse-eight.vercel.app",
     ],
     credentials: true,
   })
 );
 
-// ROUTES
+/* ==============================
+   STATIC FILES (IMPORTANT 🔥)
+============================== */
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+/* ==============================
+   ROUTES
+============================== */
 app.use("/api/products", productRoute);
 app.use("/api/users", userRoute);
 app.use("/api/carts", cartRoute);
 app.use("/api/checkout", checkoutRoute);
 app.use("/api/orders", orderRoute);
 app.use("/api/upload", uploadRoute);
+
 app.use("/api/admin/users", adminRoute);
 app.use("/api/admin/products", productAdminRoute);
-
-/* ✅ FIXED STATIC PATH (VERY IMPORTANT) */
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
 app.use("/api/admin/orders", adminOrderRoute);
 
-// SEED ROUTE
-app.get("/api/seed", async (req, res) => {
-  try {
-    await Product.deleteMany();
-    await Product.insertMany(products);
-    res.send("Database Seeded");
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+/* ==============================
+   HEALTH CHECK
+============================== */
+app.get("/", (req, res) => {
+  res.send("API is running...");
 });
 
-// CONNECT DATABASE AND START SERVER
-mongoose.connect('mongodb+srv://nazreenb2512_db_user:vHcCE1S90zsn2CZ7@cluster1.5vhxha0.mongodb.net/demo')
+/* ==============================
+   DATABASE CONNECTION
+============================== */
+mongoose
+  .connect(process.env.MONGO_URI) // ✅ USE ENV
   .then(() => {
-    console.log('Database Connected Successfully!');
-    
+    console.log("Database Connected Successfully!");
+
     const PORT = process.env.PORT || 3500;
+
     app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+      console.log(`Server running on port ${PORT}`);
     });
   })
   .catch((err) => console.log(err));
