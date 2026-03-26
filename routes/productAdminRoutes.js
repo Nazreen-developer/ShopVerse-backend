@@ -2,36 +2,54 @@ import express from "express";
 import Product from "../models/Product.js";
 import { protect, admin } from "../middleware/authMiddleware.js";
 import multer from "multer";
-import path from "path";
+import { v2 as cloudinary } from "cloudinary";
+import streamifier from "streamifier";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const router = express.Router();
 
 /* ==============================
-   MULTER CONFIG
+   CLOUDINARY CONFIG
 ============================== */
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename(req, file, cb) {
-    cb(
-      null,
-      `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`
-    );
-  },
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+/* ==============================
+   MULTER MEMORY STORAGE (IMPORTANT)
+============================== */
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 /* ==============================
-   GET ALL PRODUCTS
+   UPLOAD TO CLOUDINARY
+============================== */
+const uploadToCloudinary = (buffer) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: "products" },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+
+    streamifier.createReadStream(buffer).pipe(stream);
+  });
+};
+
+/* ==============================
+   GET ALL PRODUCTS (ADMIN)
 ============================== */
 router.get("/", protect, admin, async (req, res) => {
   try {
     const products = await Product.find({});
     res.json(products);
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: "Server Error" });
   }
 });
@@ -46,58 +64,50 @@ router.post(
   upload.single("image"),
   async (req, res) => {
     try {
-      const {
-        name,
-        price,
-        discountPrice,
-        countInStock,
-        sku,
-        mainCategory,
-        subCategory,
-        brand,
-        sizes,
-        colors,
-        collections,
-        material,
-        gender,
-        description,
-      } = req.body;
+      let imageUrl = "";
+
+      // ✅ Upload to Cloudinary
+      if (req.file) {
+        const result = await uploadToCloudinary(req.file.buffer);
+        imageUrl = result.secure_url;
+      }
 
       const product = new Product({
         user: req.user._id,
 
-        name,
-        description,
-        price: Number(price),
-        discountPrice: Number(discountPrice) || 0,
-        countInStock: Number(countInStock),
-        sku,
+        name: req.body.name,
+        description: req.body.description,
 
-        mainCategory,
-        subCategory,
+        price: Number(req.body.price),
+        discountPrice: Number(req.body.discountPrice) || 0,
+        countInStock: Number(req.body.countInStock),
+        sku: req.body.sku,
 
-        brand,
+        mainCategory: req.body.mainCategory,
+        subCategory: req.body.subCategory,
 
-        sizes: sizes ? JSON.parse(sizes) : [],
-        colors: colors ? JSON.parse(colors) : [],
+        brand: req.body.brand,
 
-        collections,
-        material,
-        gender,
+        sizes: req.body.sizes ? JSON.parse(req.body.sizes) : [],
+        colors: req.body.colors ? JSON.parse(req.body.colors) : [],
 
-        images: req.file
+        collections: req.body.collections,
+        material: req.body.material,
+        gender: req.body.gender,
+
+        images: imageUrl
           ? [
               {
-                url: `/uploads/${req.file.filename}`,
-                altText: name,
+                url: imageUrl,
+                altText: req.body.name,
               },
             ]
           : [],
       });
 
       const createdProduct = await product.save();
-
       res.status(201).json(createdProduct);
+
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "Product creation failed" });
@@ -121,54 +131,39 @@ router.put(
         return res.status(404).json({ message: "Product not found" });
       }
 
-      const {
-        name,
-        price,
-        discountPrice,
-        countInStock,
-        sku,
-        mainCategory,
-        subCategory,
-        brand,
-        sizes,
-        colors,
-        collections,
-        material,
-        gender,
-        description,
-      } = req.body;
+      Object.assign(product, {
+        name: req.body.name,
+        description: req.body.description,
+        price: Number(req.body.price),
+        discountPrice: Number(req.body.discountPrice) || 0,
+        countInStock: Number(req.body.countInStock),
+        sku: req.body.sku,
+        mainCategory: req.body.mainCategory,
+        subCategory: req.body.subCategory,
+        brand: req.body.brand,
+        collections: req.body.collections,
+        material: req.body.material,
+        gender: req.body.gender,
+      });
 
-      product.name = name;
-      product.description = description;
-      product.price = Number(price);
-      product.discountPrice = Number(discountPrice) || 0;
-      product.countInStock = Number(countInStock);
-      product.sku = sku;
+      if (req.body.sizes) product.sizes = JSON.parse(req.body.sizes);
+      if (req.body.colors) product.colors = JSON.parse(req.body.colors);
 
-      product.mainCategory = mainCategory;
-      product.subCategory = subCategory;
-
-      product.brand = brand;
-
-      product.sizes = sizes ? JSON.parse(sizes) : [];
-      product.colors = colors ? JSON.parse(colors) : [];
-
-      product.collections = collections;
-      product.material = material;
-      product.gender = gender;
-
+      // ✅ Upload new image if provided
       if (req.file) {
+        const result = await uploadToCloudinary(req.file.buffer);
+
         product.images = [
           {
-            url: `/uploads/${req.file.filename}`,
-            altText: name,
+            url: result.secure_url,
+            altText: product.name,
           },
         ];
       }
 
       const updatedProduct = await product.save();
-
       res.json(updatedProduct);
+
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "Update failed" });
@@ -188,10 +183,9 @@ router.delete("/:id", protect, admin, async (req, res) => {
     }
 
     await product.deleteOne();
-
     res.json({ message: "Product removed" });
+
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: "Delete failed" });
   }
 });
